@@ -1,4 +1,4 @@
-"""WebSocket router — real-time event metadata streaming to proctors.
+"""WebSocket router — real-time event metadata streaming to proctors & commands to students.
 
 PRIVACY: Only structured event JSON (flags, scores, timestamps) is sent.
 NO video data is ever transmitted over WebSocket.
@@ -20,6 +20,8 @@ router = APIRouter(tags=["websocket"])
 
 # Connected proctor clients, keyed by session_id they're monitoring
 _proctor_connections: Dict[str, Set[WebSocket]] = {}
+# Connected student clients, keyed by session_id
+_student_connections: Dict[str, Set[WebSocket]] = {}
 
 
 async def broadcast_event(session_id: uuid.UUID, event_data: dict) -> None:
@@ -49,6 +51,31 @@ async def broadcast_event(session_id: uuid.UUID, event_data: dict) -> None:
     _proctor_connections[key] -= dead_connections
     if not _proctor_connections[key]:
         del _proctor_connections[key]
+
+
+async def broadcast_to_student(session_id: uuid.UUID, command_data: dict) -> None:
+    """Send a command to the student's browser for a specific session.
+
+    Used by the proctor to send warnings and termination commands.
+    The student's ExamSession component listens for these.
+    """
+    key = str(session_id)
+    if key not in _student_connections:
+        logger.warning("no_student_ws_connection", session_id=key)
+        return
+
+    dead_connections = set()
+    message = json.dumps(command_data)
+
+    for ws in _student_connections[key]:
+        try:
+            await ws.send_text(message)
+        except Exception:
+            dead_connections.add(ws)
+
+    _student_connections[key] -= dead_connections
+    if not _student_connections[key]:
+        del _student_connections[key]
 
 
 @router.websocket("/ws/proctor/{session_id}")
@@ -102,3 +129,41 @@ async def proctor_websocket(websocket: WebSocket, session_id: str):
             _proctor_connections[session_id].discard(websocket)
             if not _proctor_connections[session_id]:
                 del _proctor_connections[session_id]
+
+
+@router.websocket("/ws/student/{session_id}")
+async def student_websocket(websocket: WebSocket, session_id: str):
+    """WebSocket endpoint for students to receive proctor commands.
+
+    The student's ExamSession component connects here on mount.
+    It receives commands like:
+    - proctor_warning: Show warning overlay, capture clip
+    - session_terminated: End exam immediately
+
+    Message format sent to student:
+    {
+        "type": "proctor_warning",
+        "message": "You have been flagged...",
+        "timestamp": "2026-01-01T00:00:00Z"
+    }
+    """
+    await websocket.accept()
+
+    if session_id not in _student_connections:
+        _student_connections[session_id] = set()
+    _student_connections[session_id].add(websocket)
+
+    logger.info("student_ws_connected", session_id=session_id)
+
+    try:
+        while True:
+            # Keep alive — student doesn't send commands, just receives
+            await websocket.receive_text()
+
+    except WebSocketDisconnect:
+        logger.info("student_ws_disconnected", session_id=session_id)
+    finally:
+        if session_id in _student_connections:
+            _student_connections[session_id].discard(websocket)
+            if not _student_connections[session_id]:
+                del _student_connections[session_id]

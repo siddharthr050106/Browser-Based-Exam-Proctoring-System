@@ -58,6 +58,18 @@ export const sessionApi = {
   end: (id) => request(`/sessions/${id}/end`, { method: 'POST' }),
   update: (id, data) => request(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   listActive: () => request('/sessions/'),
+  warn: (id, message) => request(`/sessions/${id}/warn`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  }),
+  terminate: (id, reason) => request(`/sessions/${id}/terminate`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
+  review: (id, verdict, notes) => request(`/sessions/${id}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ verdict, notes }),
+  }),
 }
 
 // ── Events ──

@@ -74,3 +74,29 @@ async def list_sessions_for_exam(
         select(ExamSession).where(ExamSession.exam_id == exam_id)
     )
     return list(result.scalars().all())
+
+
+async def warn_session(db: AsyncSession, session_id: uuid.UUID) -> ExamSession | None:
+    """Record that a proctor warning was issued to the student."""
+    session = await get_session(db, session_id)
+    if session is None:
+        return None
+    session.warning_issued_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.refresh(session)
+    return session
+
+
+async def terminate_session(
+    db: AsyncSession, session_id: uuid.UUID, reason: str
+) -> ExamSession | None:
+    """Terminate a session by proctor decision after clip review."""
+    session = await get_session(db, session_id)
+    if session is None:
+        return None
+    session.status = SessionStatus.TERMINATED
+    session.termination_reason = reason
+    session.end_time = datetime.now(timezone.utc)
+    await db.flush()
+    await db.refresh(session)
+    return session

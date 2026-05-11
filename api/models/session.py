@@ -51,6 +51,8 @@ class ExamSession(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    warning_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Relationships
     student = relationship("User", back_populates="sessions", lazy="selectin")

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { sessionApi, eventApi, clipApi } from '../../lib/api'
-import { Clock, Shield, AlertTriangle, CheckCircle, Eye, EyeOff, Smartphone, Users, Camera, MonitorOff, AlertCircle, X } from 'lucide-react'
+import { Clock, Shield, AlertTriangle, CheckCircle, Eye, EyeOff, Smartphone, Users, Camera, MonitorOff, AlertCircle, X, ShieldAlert } from 'lucide-react'
 
 const BUFFER_DURATION = 30 // seconds
 const CHUNK_INTERVAL = 1000 // ms
@@ -68,6 +68,12 @@ const ALERT_CONFIG = {
     icon: AlertCircle,
     color: 'red',
   },
+  proctor_warning: {
+    label: 'Proctor Warning',
+    description: 'The proctor has issued a warning. A recording is being captured.',
+    icon: ShieldAlert,
+    color: 'red',
+  },
 }
 
 function getAlertConfig(eventType) {
@@ -95,6 +101,11 @@ export default function ExamSession() {
   const [stream, setStream] = useState(null)
   const [alerts, setAlerts] = useState([]) // Active alert toasts
   const [detectionReady, setDetectionReady] = useState(false)
+  const [warningActive, setWarningActive] = useState(false)   // Warning overlay showing
+  const [warningMessage, setWarningMessage] = useState('')
+  const [terminated, setTerminated] = useState(false)          // Exam terminated by proctor
+  const [terminationReason, setTerminationReason] = useState('')
+  const studentWsRef = useRef(null)
 
   // ── Add alert toast ──
   const addAlert = useCallback((eventType, tier) => {
@@ -195,6 +206,72 @@ export default function ExamSession() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('blur', handleBlur)
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }
+  }, [sessionId])
+
+  // ── Student WebSocket — receive proctor commands ──
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/student/${sessionId}`)
+    studentWsRef.current = ws
+
+    ws.onopen = () => console.log('[StudentWS] Connected')
+
+    ws.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data)
+
+        if (data.type === 'proctor_warning') {
+          // Show warning overlay immediately
+          setWarningActive(true)
+          setWarningMessage(data.message || 'You have received a warning from the proctor.')
+          setMonitorStatus('red')
+          addAlert('proctor_warning', 'critical')
+
+          // Wait 10 seconds (to capture post-warning footage), then freeze buffer & upload
+          setTimeout(async () => {
+            // At this point the buffer has ~20s pre-warning + 10s post-warning
+            const clipBlob = new Blob(chunksRef.current, { type: 'video/webm' })
+            if (clipBlob.size > 0) {
+              try {
+                await clipApi.upload(sessionId, 'warning-' + Date.now(), clipBlob)
+                console.log('[StudentWS] Warning clip uploaded')
+              } catch (err) {
+                console.error('Warning clip upload failed:', err)
+              }
+            }
+          }, 10000)
+
+          // Auto-dismiss warning overlay after 15 seconds
+          setTimeout(() => setWarningActive(false), 15000)
+        }
+
+        if (data.type === 'session_terminated') {
+          setTerminated(true)
+          setTerminationReason(data.reason || 'Your exam has been terminated by the proctor.')
+          setStatus('terminated')
+          // Stop everything
+          clearInterval(timerRef.current)
+          if (stream) stream.getTracks().forEach(t => t.stop())
+        }
+      } catch (e) {
+        console.error('[StudentWS] Parse error:', e)
+      }
+    }
+
+    ws.onclose = () => {
+      console.log('[StudentWS] Disconnected')
+      // Auto-reconnect after 3s
+      setTimeout(() => {
+        if (status === 'active') {
+          const reconnect = new WebSocket(`${protocol}//${window.location.host}/ws/student/${sessionId}`)
+          studentWsRef.current = reconnect
+        }
+      }, 3000)
+    }
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) ws.close(1000)
     }
   }, [sessionId])
 
@@ -330,6 +407,53 @@ export default function ExamSession() {
 
   return (
     <div className="min-h-screen bg-surface-950 relative">
+
+      {/* ── TERMINATION SCREEN ── */}
+      {terminated && (
+        <div className="fixed inset-0 z-[100] bg-surface-950 flex items-center justify-center">
+          <div className="text-center max-w-lg p-8">
+            <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-10 h-10 text-red-400" />
+            </div>
+            <h1 className="text-3xl font-bold text-red-400 mb-4">Exam Terminated</h1>
+            <p className="text-surface-300 mb-2">Your exam has been terminated by the proctor.</p>
+            <div className="glass p-4 rounded-xl mt-4 mb-8">
+              <p className="text-sm text-surface-400"><span className="font-semibold text-surface-300">Reason:</span> {terminationReason}</p>
+            </div>
+            <button
+              onClick={() => navigate('/student/results')}
+              className="px-8 py-3 bg-surface-800 text-surface-300 rounded-xl hover:bg-surface-700 transition-colors"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── PROCTOR WARNING OVERLAY ── */}
+      {warningActive && !terminated && (
+        <div className="fixed inset-0 z-[90] bg-red-950/70 backdrop-blur-sm flex items-center justify-center animate-fade-in">
+          <div className="max-w-lg p-8 text-center">
+            <div className="w-20 h-20 rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center mx-auto mb-6 animate-pulse">
+              <AlertTriangle className="w-10 h-10 text-amber-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-amber-300 mb-3">⚠ Proctor Warning</h2>
+            <p className="text-surface-200 mb-6 leading-relaxed">{warningMessage}</p>
+            <div className="glass p-4 rounded-xl border border-amber-500/30">
+              <p className="text-xs text-amber-400/80">
+                A 30-second recording is being captured. Please comply with the exam rules to continue.
+              </p>
+            </div>
+            <button
+              onClick={() => setWarningActive(false)}
+              className="mt-6 px-6 py-2 bg-surface-800/80 text-surface-300 rounded-xl text-sm hover:bg-surface-700 transition-colors"
+            >
+              I Understand
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div className="fixed top-0 left-0 right-0 z-50 glass border-b border-surface-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
