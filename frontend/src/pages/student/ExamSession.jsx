@@ -5,7 +5,6 @@ import { Clock, Shield, AlertTriangle, CheckCircle, Eye, EyeOff, Smartphone, Use
 
 const BUFFER_DURATION = 30 // seconds
 const CHUNK_INTERVAL = 1000 // ms
-const RECORDER_CYCLE_MS = 5000 // Restart recorder every 5s to get playable segments
 
 // Map detection event types to human-friendly alert configs
 const ALERT_CONFIG = {
@@ -142,7 +141,7 @@ export default function ExamSession() {
         })
         setStream(mediaStream)
         if (videoRef.current) videoRef.current.srcObject = mediaStream
-        startRecordingBuffer(mediaStream)
+        // Note: startRecordingBuffer removed; we now record post-warning only
       } catch (err) {
         console.error('Failed to access media devices', err)
       }
@@ -157,55 +156,7 @@ export default function ExamSession() {
     }
   }, [])
 
-  // ── Ring buffer for 30s clip — cycles recorder to produce playable segments ──
-  const segmentsRef = useRef([])   // Array of complete, playable Blobs
-  const cycleTimerRef = useRef(null)
-
-  function startRecordingBuffer(mediaStream) {
-    const maxSegments = Math.ceil(BUFFER_DURATION / (RECORDER_CYCLE_MS / 1000))
-
-    function startCycle() {
-      try {
-        const recorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm' })
-        recorderRef.current = recorder
-        const localChunks = []
-
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) localChunks.push(e.data)
-        }
-
-        recorder.onstop = () => {
-          if (localChunks.length > 0) {
-            // Each segment is a complete, playable WebM blob (has init header)
-            const segmentBlob = new Blob(localChunks, { type: 'video/webm' })
-            segmentsRef.current.push(segmentBlob)
-            // Keep only last N segments (~30s worth)
-            if (segmentsRef.current.length > maxSegments) {
-              segmentsRef.current = segmentsRef.current.slice(-maxSegments)
-            }
-          }
-        }
-
-        recorder.start(CHUNK_INTERVAL)
-
-        // Stop after RECORDER_CYCLE_MS and start a new cycle
-        cycleTimerRef.current = setTimeout(() => {
-          if (recorder.state !== 'inactive') {
-            recorder.stop()
-          }
-          // Start next cycle if stream is still active
-          if (mediaStream.active) {
-            startCycle()
-          }
-        }, RECORDER_CYCLE_MS)
-      } catch (err) {
-        console.error('MediaRecorder init failed', err)
-      }
-    }
-
-    startCycle()
-  }
-
+  // Video buffer removed — we now only record post-warning
   // ── Timer ──
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -260,32 +211,43 @@ export default function ExamSession() {
           setMonitorStatus('red')
           addAlert('proctor_warning', 'critical')
 
-          // Wait 10 seconds (to capture post-warning footage), then freeze buffer & upload
-          setTimeout(async () => {
-            // Stop current recorder to flush any remaining data
-            if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-              recorderRef.current.stop()
-            }
-            // Wait a moment for onstop to fire and add the final segment
-            await new Promise(r => setTimeout(r, 500))
-
-            // Combine all segments into a single clip
-            // Each segment is a complete WebM — use the first one as-is (has header)
-            // For a simple approach, just use the latest complete segment or all segments
-            const segments = segmentsRef.current
-            if (segments.length > 0) {
-              // Create a combined blob from all buffered segments
-              const clipBlob = new Blob(segments, { type: 'video/webm' })
-              try {
-                await clipApi.uploadWarning(sessionId, clipBlob)
-                console.log('[StudentWS] Warning clip uploaded successfully, segments:', segments.length)
-              } catch (err) {
-                console.error('Warning clip upload failed:', err)
+          // Start a new 30-second recording immediately for post-warning evidence
+          if (stream && stream.active) {
+            try {
+              const warningRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
+              const chunks = []
+              
+              warningRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunks.push(e.data)
               }
-            } else {
-              console.warn('[StudentWS] No segments available for warning clip')
+              
+              warningRecorder.onstop = async () => {
+                if (chunks.length > 0) {
+                  const clipBlob = new Blob(chunks, { type: 'video/webm' })
+                  try {
+                    await clipApi.uploadWarning(sessionId, clipBlob)
+                    console.log('[StudentWS] 30s post-warning clip uploaded successfully')
+                  } catch (err) {
+                    console.error('Warning clip upload failed:', err)
+                  }
+                }
+              }
+              
+              warningRecorder.start(1000)
+              console.log('[StudentWS] Started 30s post-warning recording')
+              
+              // Stop after 30 seconds
+              setTimeout(() => {
+                if (warningRecorder.state !== 'inactive') {
+                  warningRecorder.stop()
+                }
+              }, 30000)
+            } catch (err) {
+              console.error('Failed to start warning recorder:', err)
             }
-          }, 10000)
+          } else {
+            console.warn('[StudentWS] Cannot record warning clip: camera stream inactive')
+          }
 
           // Auto-dismiss warning overlay after 15 seconds
           setTimeout(() => setWarningActive(false), 15000)
