@@ -58,7 +58,7 @@ class DetectionPipeline:
             tab_switch_window_seconds=cfg.get("tab_switch_window", 120.0),
         )
         self._frame_count = 0
-        self._yolo_interval = max(1, int(30 / cfg.get("yolo_fps", 5)))
+        self._yolo_interval = 1  # Run YOLO every frame (browser sends at ~0.5fps)
         self._last_gaze = None  # Stores last gaze data for the worker to publish
 
     def start_session(self, first_frame: np.ndarray) -> None:
@@ -113,10 +113,11 @@ class DetectionPipeline:
                     "pitch": gz.pitch,
                     "anomaly_score": ar.anomaly_score,
                 }
-                if ar.flags:
-                    signals.extend(self.rules.process_gaze_anomaly(
-                        ar.flags, ar.anomaly_score,
-                    ))
+                # Gaze anomaly alerting disabled — data still collected for timeline
+                # if ar.flags:
+                #     signals.extend(self.rules.process_gaze_anomaly(
+                #         ar.flags, ar.anomaly_score,
+                #     ))
 
         # 5) Check composite critical for each new FLAG
         for sig in list(signals):

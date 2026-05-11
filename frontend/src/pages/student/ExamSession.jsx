@@ -5,6 +5,7 @@ import { Clock, Shield, AlertTriangle, CheckCircle, Eye, EyeOff, Smartphone, Use
 
 const BUFFER_DURATION = 30 // seconds
 const CHUNK_INTERVAL = 1000 // ms
+const RECORDER_CYCLE_MS = 5000 // Restart recorder every 5s to get playable segments
 
 // Map detection event types to human-friendly alert configs
 const ALERT_CONFIG = {
@@ -156,25 +157,53 @@ export default function ExamSession() {
     }
   }, [])
 
-  // ── Ring buffer for 30s clip upload ──
+  // ── Ring buffer for 30s clip — cycles recorder to produce playable segments ──
+  const segmentsRef = useRef([])   // Array of complete, playable Blobs
+  const cycleTimerRef = useRef(null)
+
   function startRecordingBuffer(mediaStream) {
-    try {
-      const recorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm' })
-      recorderRef.current = recorder
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data)
-          // Keep only last BUFFER_DURATION seconds worth of chunks
-          const maxChunks = BUFFER_DURATION * (1000 / CHUNK_INTERVAL)
-          if (chunksRef.current.length > maxChunks) {
-            chunksRef.current = chunksRef.current.slice(-maxChunks)
+    const maxSegments = Math.ceil(BUFFER_DURATION / (RECORDER_CYCLE_MS / 1000))
+
+    function startCycle() {
+      try {
+        const recorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm' })
+        recorderRef.current = recorder
+        const localChunks = []
+
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) localChunks.push(e.data)
+        }
+
+        recorder.onstop = () => {
+          if (localChunks.length > 0) {
+            // Each segment is a complete, playable WebM blob (has init header)
+            const segmentBlob = new Blob(localChunks, { type: 'video/webm' })
+            segmentsRef.current.push(segmentBlob)
+            // Keep only last N segments (~30s worth)
+            if (segmentsRef.current.length > maxSegments) {
+              segmentsRef.current = segmentsRef.current.slice(-maxSegments)
+            }
           }
         }
+
+        recorder.start(CHUNK_INTERVAL)
+
+        // Stop after RECORDER_CYCLE_MS and start a new cycle
+        cycleTimerRef.current = setTimeout(() => {
+          if (recorder.state !== 'inactive') {
+            recorder.stop()
+          }
+          // Start next cycle if stream is still active
+          if (mediaStream.active) {
+            startCycle()
+          }
+        }, RECORDER_CYCLE_MS)
+      } catch (err) {
+        console.error('MediaRecorder init failed', err)
       }
-      recorder.start(CHUNK_INTERVAL)
-    } catch (err) {
-      console.warn('MediaRecorder not available:', err.message)
     }
+
+    startCycle()
   }
 
   // ── Timer ──
@@ -233,15 +262,28 @@ export default function ExamSession() {
 
           // Wait 10 seconds (to capture post-warning footage), then freeze buffer & upload
           setTimeout(async () => {
-            // At this point the buffer has ~20s pre-warning + 10s post-warning
-            const clipBlob = new Blob(chunksRef.current, { type: 'video/webm' })
-            if (clipBlob.size > 0) {
+            // Stop current recorder to flush any remaining data
+            if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+              recorderRef.current.stop()
+            }
+            // Wait a moment for onstop to fire and add the final segment
+            await new Promise(r => setTimeout(r, 500))
+
+            // Combine all segments into a single clip
+            // Each segment is a complete WebM — use the first one as-is (has header)
+            // For a simple approach, just use the latest complete segment or all segments
+            const segments = segmentsRef.current
+            if (segments.length > 0) {
+              // Create a combined blob from all buffered segments
+              const clipBlob = new Blob(segments, { type: 'video/webm' })
               try {
                 await clipApi.uploadWarning(sessionId, clipBlob)
-                console.log('[StudentWS] Warning clip uploaded successfully')
+                console.log('[StudentWS] Warning clip uploaded successfully, segments:', segments.length)
               } catch (err) {
                 console.error('Warning clip upload failed:', err)
               }
+            } else {
+              console.warn('[StudentWS] No segments available for warning clip')
             }
           }, 10000)
 
