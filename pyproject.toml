@@ -1,0 +1,10 @@
+[project]
+name = "bezp"
+version = "1.0.0"
+description = "Browser-Based Exam Proctoring System"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
