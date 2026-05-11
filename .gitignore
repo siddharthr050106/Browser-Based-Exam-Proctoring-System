@@ -46,3 +46,6 @@ extract_docx.ps1
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Clip storage
+clip_storage/

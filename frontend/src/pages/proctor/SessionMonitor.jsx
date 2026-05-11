@@ -72,17 +72,36 @@ export default function SessionMonitor() {
     new Map(allEvents.map(e => [e.id || e.timestamp, e])).values()
   ).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
 
-  // Check for clip-available events (uploaded by student after warning)
+  // Check for clip-available: poll REST endpoint + check WS events
   useEffect(() => {
-    if (!warningPending) return
+    if (!warningPending || clipReady) return
+
+    // Method 1: Check WS events for warning_clip_ready
     const clipEvent = uniqueEvents.find(e =>
-      e.clip_url && new Date(e.timestamp) > new Date(session?.warning_issued_at || 0)
+      e.event_type === 'warning_clip_ready' && e.clip_url
     )
     if (clipEvent?.clip_url) {
       setClipReady(true)
       setClipUrl(clipEvent.clip_url)
+      return
     }
-  }, [uniqueEvents, warningPending, session?.warning_issued_at])
+
+    // Method 2: Poll REST endpoint every 3 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        const result = await clipApi.getWarning(sessionId)
+        if (result?.clip_url) {
+          setClipReady(true)
+          setClipUrl(result.clip_url)
+          clearInterval(pollInterval)
+        }
+      } catch {
+        // Clip not ready yet — keep polling
+      }
+    }, 3000)
+
+    return () => clearInterval(pollInterval)
+  }, [warningPending, clipReady, uniqueEvents, sessionId])
 
   // Count recent flags
   const cutoff = Date.now() - FLAG_WINDOW_MINUTES * 60 * 1000

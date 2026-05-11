@@ -93,5 +93,20 @@ export const clipApi = {
     if (!res.ok) throw new Error('Clip upload failed')
     return res.json()
   },
+  // Upload a warning clip (no event UUID needed)
+  uploadWarning: async (sessionId, blob) => {
+    const token = useAuthStore.getState().token
+    const form = new FormData()
+    form.append('clip', blob, 'warning_clip.webm')
+    const res = await fetch(`${BASE}/clips/warning/${sessionId}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) throw new Error('Warning clip upload failed')
+    return res.json()
+  },
+  // Get latest warning clip for a session
+  getWarning: (sessionId) => request(`/clips/warning/${sessionId}`),
   get: (eventId) => request(`/clips/${eventId}`),
 }

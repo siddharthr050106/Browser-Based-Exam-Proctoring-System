@@ -135,7 +135,10 @@ export default function ExamSession() {
     let mediaStream
     async function setup() {
       try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 360 } },
+          audio: true,
+        })
         setStream(mediaStream)
         if (videoRef.current) videoRef.current.srcObject = mediaStream
         startRecordingBuffer(mediaStream)
@@ -234,8 +237,8 @@ export default function ExamSession() {
             const clipBlob = new Blob(chunksRef.current, { type: 'video/webm' })
             if (clipBlob.size > 0) {
               try {
-                await clipApi.upload(sessionId, 'warning-' + Date.now(), clipBlob)
-                console.log('[StudentWS] Warning clip uploaded')
+                await clipApi.uploadWarning(sessionId, clipBlob)
+                console.log('[StudentWS] Warning clip uploaded successfully')
               } catch (err) {
                 console.error('Warning clip upload failed:', err)
               }
