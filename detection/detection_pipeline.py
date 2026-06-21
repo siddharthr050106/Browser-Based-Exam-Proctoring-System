@@ -17,6 +17,7 @@ from detection.yolo_detector import YoloDetector
 from detection.background_monitor import BackgroundMonitor
 from detection.gaze_estimator import GazeEstimator
 from detection.anomaly_detector import AnomalyDetector
+from detection.audio_detector import AudioDetector
 from detection.rule_engine import RuleEngine, DetectionSignal
 
 logger = structlog.get_logger()
@@ -57,6 +58,7 @@ class DetectionPipeline:
             tab_switch_flag_count=cfg.get("tab_switch_count", 3),
             tab_switch_window_seconds=cfg.get("tab_switch_window", 120.0),
         )
+        self.audio = AudioDetector()
         self._frame_count = 0
         self._yolo_interval = 1  # Run YOLO every frame (browser sends at ~0.5fps)
         self._last_gaze = None  # Stores last gaze data for the worker to publish
@@ -130,6 +132,23 @@ class DetectionPipeline:
     def process_browser_event(self, event_type: str) -> DetectionSignal:
         """Process a browser-level event (tab switch, blur, fullscreen exit)."""
         return self.rules.process_tab_switch(event_type)
+
+    def process_audio(self, pcm_int16: np.ndarray) -> list[DetectionSignal]:
+        """Process an audio chunk through the CNN."""
+        signals = []
+        ar = self.audio.detect(pcm_int16)
+        
+        if ar.flags:
+            meta = {"sustained_windows": ar.sustained_windows}
+            signals.extend(self.rules.process_audio(ar.flags, ar.confidence, meta))
+            
+        # Check composite critical for audio flags too
+        for sig in list(signals):
+            composite = self.rules.check_composite_critical(sig)
+            if composite:
+                signals.append(composite)
+                
+        return signals, ar
 
     def close(self) -> None:
         """Release resources."""

@@ -89,6 +89,33 @@ class RuleEngine:
                 signals.append(DetectionSignal(event_type="gaze_anomaly", tier=tier, confidence=score, requires_clip=(tier == Tier.FLAG)))
         return signals
 
+    def process_audio(self, flags: list[str], confidence: float = 0.0, metadata: dict = None) -> list[DetectionSignal]:
+        signals = []
+        metadata = metadata or {}
+        sustained = metadata.get("sustained_windows", 0)
+        
+        for flag in flags:
+            if flag == "MULTI_SPEAKER":
+                # 5+ windows (15s) -> FLAG, otherwise WARNING
+                tier = Tier.FLAG if sustained >= 5 else Tier.WARNING
+                signals.append(DetectionSignal(
+                    event_type="multiple_speakers", tier=tier, confidence=confidence, 
+                    metadata=metadata, requires_clip=(tier == Tier.FLAG)
+                ))
+            elif flag == "SINGLE_SPEAKER":
+                # Student talking: 5+ windows -> FLAG, otherwise WARNING
+                tier = Tier.FLAG if sustained >= 5 else Tier.WARNING
+                signals.append(DetectionSignal(
+                    event_type="single_speaker", tier=tier, confidence=confidence, 
+                    metadata=metadata, requires_clip=False
+                ))
+            elif flag == "BACKGROUND_NOISE":
+                signals.append(DetectionSignal(
+                    event_type="background_noise", tier=Tier.WARNING, confidence=confidence, 
+                    metadata=metadata, requires_clip=False
+                ))
+        return signals
+
     def process_tab_switch(self, event_type: str = "tab_switch") -> DetectionSignal:
         now = time.time()
         self._tab_switches.append(now)
@@ -113,7 +140,7 @@ class RuleEngine:
             self._recent_flags.popleft()
 
         recent_types = {f[0] for f in self._recent_flags}
-        critical_combo = {"background_changed", "phone_detected", "gaze_anomaly"}
+        critical_combo = {"background_changed", "phone_detected", "gaze_anomaly", "multiple_speakers"}
         if len(recent_types & critical_combo) >= 2:
             return DetectionSignal(event_type="composite_critical", tier=Tier.CRITICAL, metadata={"coincident_events": list(recent_types & critical_combo)}, requires_clip=True)
         return None

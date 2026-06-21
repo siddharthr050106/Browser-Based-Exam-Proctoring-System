@@ -94,3 +94,59 @@ def test_composite_critical():
 
     assert composite is not None
     assert composite.tier == Tier.CRITICAL
+
+
+def test_audio_single_speaker():
+    """Single speaker talking triggers WARNING if < 5 windows, FLAG if >= 5."""
+    engine = RuleEngine()
+    
+    # 3 windows (9s)
+    signals = engine.process_audio(["SINGLE_SPEAKER"], confidence=0.9, metadata={"sustained_windows": 3})
+    assert len(signals) == 1
+    assert signals[0].tier == Tier.WARNING
+    assert signals[0].requires_clip is False
+    
+    # 5 windows (15s)
+    signals = engine.process_audio(["SINGLE_SPEAKER"], confidence=0.9, metadata={"sustained_windows": 5})
+    assert signals[0].tier == Tier.FLAG
+    assert signals[0].requires_clip is False
+
+
+def test_audio_multi_speaker():
+    """Multiple speakers triggers WARNING if < 5 windows, FLAG if >= 5."""
+    engine = RuleEngine()
+    
+    # 3 windows
+    signals = engine.process_audio(["MULTI_SPEAKER"], confidence=0.85, metadata={"sustained_windows": 3})
+    assert len(signals) == 1
+    assert signals[0].tier == Tier.WARNING
+    assert signals[0].requires_clip is False
+    
+    # 5 windows
+    signals = engine.process_audio(["MULTI_SPEAKER"], confidence=0.85, metadata={"sustained_windows": 5})
+    assert signals[0].tier == Tier.FLAG
+    assert signals[0].requires_clip is True
+
+
+def test_audio_background_noise():
+    """Background noise triggers WARNING without clip."""
+    engine = RuleEngine()
+    signals = engine.process_audio(["BACKGROUND_NOISE"], confidence=0.7, metadata={})
+    assert len(signals) == 1
+    assert signals[0].tier == Tier.WARNING
+    assert signals[0].requires_clip is False
+
+
+def test_audio_composite_critical():
+    """Multiple speakers + phone detected = CRITICAL."""
+    engine = RuleEngine()
+    
+    # Needs to be FLAG tier to trigger composite logic
+    s1 = engine.process_audio(["MULTI_SPEAKER"], confidence=0.9, metadata={"sustained_windows": 5})[0]
+    engine.check_composite_critical(s1)
+    
+    s2 = engine.process_yolo(["PHONE_DETECTED"])[0]
+    composite = engine.check_composite_critical(s2)
+    
+    assert composite is not None
+    assert composite.tier == Tier.CRITICAL

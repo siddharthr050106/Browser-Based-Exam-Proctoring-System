@@ -184,31 +184,31 @@ async def end_session(session_id: str):
     """
     if session_id in _pipelines:
         boundary = _pipelines[session_id].anomaly.get_boundary_params()
+        audio_boundary = _pipelines[session_id].audio.get_boundary_params()
         _pipelines[session_id].close()
         del _pipelines[session_id]
         logger.info("sidecar_session_ended", session_id=session_id)
-        return {"status": "session_ended", "fl_boundary_params": boundary}
+        return {
+            "status": "session_ended", 
+            "fl_boundary_params": boundary,
+            "fl_audio_params": audio_boundary
+        }
     return {"status": "session_not_found"}
 
 
-# ── Audio Detection (Phase 1 — Energy-based stub) ──
+# ── Audio Detection (Phase 2 — CNN) ──
 
 @app.websocket("/ws/audio/{session_id}")
 async def audio_websocket(websocket: WebSocket, session_id: str):
     """Receive audio chunks from the Electron renderer for analysis.
 
-    Phase 1: Simple RMS energy-based voice activity detection.
-    Phase 2 (Part 2): Replace with MFCC + CNN multi-speaker detection.
-
-    Audio arrives as base64-encoded 16kHz PCM int16 chunks (~3 seconds each).
+    Uses the PyTorch Audio CNN (via ONNX) to classify 3-second chunks
+    into silence, single_speaker, multi_speaker, or background_noise.
+    
+    Audio arrives as base64-encoded 16kHz PCM int16 chunks.
     """
     await websocket.accept()
     logger.info("audio_ws_connected", session_id=session_id)
-
-    # Sliding window state
-    speech_window_count = 0
-    SPEECH_THRESHOLD = 500     # RMS energy threshold for speech
-    MULTI_SPEAKER_WINDOWS = 5  # 5 consecutive windows = 15 seconds
 
     try:
         while True:
@@ -217,33 +217,32 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
             try:
                 # Decode base64 PCM audio
                 audio_bytes = base64.b64decode(data)
-                samples = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
+                samples = np.frombuffer(audio_bytes, dtype=np.int16)
 
-                # Compute RMS energy
-                rms = np.sqrt(np.mean(samples ** 2))
+                # Initialize pipeline if not exists
+                if session_id not in _pipelines:
+                    _pipelines[session_id] = DetectionPipeline(_get_pipeline_config())
 
-                # Simple voice activity detection
-                is_speech = rms > SPEECH_THRESHOLD
+                signals, ar = _pipelines[session_id].process_audio(samples)
 
-                if is_speech:
-                    speech_window_count += 1
-                else:
-                    speech_window_count = max(0, speech_window_count - 1)
-
-                # Phase 1 stub: flag sustained speech as potential multi-speaker
-                # (Real CNN in Part 2 will distinguish single vs multi speaker)
+                # Convert signals to response format
                 flag = None
-                if speech_window_count >= MULTI_SPEAKER_WINDOWS:
+                if signals:
+                    # Take the highest tier signal for the immediate response
+                    tier_val = {"info": 1, "warning": 2, "flag": 3, "critical": 4}
+                    sig = max(signals, key=lambda s: tier_val.get(s.tier.value, 0))
                     flag = {
-                        "event_type": "multiple_speakers",
-                        "tier": "warning",
-                        "confidence": min(1.0, speech_window_count / 10.0),
-                        "metadata": {"rms": float(rms), "consecutive_windows": speech_window_count},
+                        "event_type": sig.event_type,
+                        "tier": sig.tier.value,
+                        "confidence": sig.confidence,
+                        "metadata": sig.metadata,
+                        "requires_clip": getattr(sig, "requires_clip", False)
                     }
 
                 await websocket.send_json({
-                    "rms": float(rms),
-                    "is_speech": is_speech,
+                    "class": ar.predicted_class,
+                    "confidence": ar.confidence,
+                    "is_speech": ar.is_speech,
                     "flag": flag,
                 })
 

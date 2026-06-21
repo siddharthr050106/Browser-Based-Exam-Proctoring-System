@@ -81,5 +81,11 @@ class Settings(BaseSettings):
     SIDECAR_HOST: str = "127.0.0.1"
     SIDECAR_PORT: int = 8765
 
+    # ── Federated Learning ──
+    FL_MIN_SESSIONS_BEFORE_UPDATE: int = 10
+    FL_NOISE_MULTIPLIER: float = 0.1
+    FL_MAX_GRADIENT_NORM: float = 1.0
+    FL_VALIDATION_STD_THRESHOLD: float = 2.0
+
 
 settings = Settings()

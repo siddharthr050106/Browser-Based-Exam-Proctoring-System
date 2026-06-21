@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
     )
 
     # Mount routers
-    from api.routers import sessions, events, clips, users, exams, ws, heartbeat
+    from api.routers import sessions, events, clips, users, exams, ws, heartbeat, fl
 
     app.include_router(sessions.router)
     app.include_router(events.router)
@@ -88,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(exams.router)
     app.include_router(ws.router)
     app.include_router(heartbeat.router)
+    app.include_router(fl.router)
 
     @app.get("/health")
     async def health_check():

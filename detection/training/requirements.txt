@@ -1,0 +1,8 @@
+# BEZP Audio CNN Training Dependencies
+# These are only needed for training the model, NOT for running the sidecar.
+
+torch>=2.0.0
+torchaudio>=2.0.0
+onnx>=1.14.0
+librosa>=0.10.0
+numpy>=1.26.4
