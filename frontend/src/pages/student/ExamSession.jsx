@@ -494,14 +494,27 @@ export default function ExamSession() {
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
         audioContextRef.current = audioCtx
+        
+        // Ensure the context is running (browsers often suspend new contexts)
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume()
+        }
+        
         const source = audioCtx.createMediaStreamSource(stream)
         const processor = audioCtx.createScriptProcessor(4096, 1, 1)
 
         let chunkBuffer = []
         const SAMPLES_PER_CHUNK = 16000 * 3 // 3 seconds at 16kHz
+        let hasLoggedAudioProcess = false
 
         processor.onaudioprocess = (e) => {
-          if (getCurrentGear() >= 3) return // Gear 3-4: pause audio streaming
+          if (!hasLoggedAudioProcess) {
+            console.log('[Audio] onaudioprocess is firing, receiving audio samples...')
+            hasLoggedAudioProcess = true
+          }
+          
+          // Audio is sent to the local sidecar, so it doesn't consume internet bandwidth.
+          // We removed the Gear 3 suspension here so audio detection always runs.
 
           const input = e.inputBuffer.getChannelData(0)
           // Convert float32 to int16
@@ -513,12 +526,19 @@ export default function ExamSession() {
 
           if (chunkBuffer.length >= SAMPLES_PER_CHUNK) {
             const chunk = new Int16Array(chunkBuffer.splice(0, SAMPLES_PER_CHUNK))
-            // Convert to base64 and send
+            // Convert to base64 safely (avoid stack overflow from spread operator)
             const bytes = new Uint8Array(chunk.buffer)
-            const base64 = btoa(String.fromCharCode(...bytes))
+            let binary = ''
+            const CHUNK_SIZE = 8192
+            for (let offset = 0; offset < bytes.length; offset += CHUNK_SIZE) {
+              const slice = bytes.subarray(offset, Math.min(offset + CHUNK_SIZE, bytes.length))
+              binary += String.fromCharCode.apply(null, slice)
+            }
+            const base64 = btoa(binary)
 
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(base64)
+              console.log('[Audio] Sent 3s chunk to sidecar')
             }
           }
         }

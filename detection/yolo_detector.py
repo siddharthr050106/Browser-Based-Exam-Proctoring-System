@@ -104,6 +104,15 @@ class YoloDetector:
         confidences = boxes.conf.cpu().numpy()
         xyxy = boxes.xyxy.cpu().numpy()
 
+        # Debug: log all detections for diagnostics
+        if len(classes) > 0:
+            det_summary = {}
+            for cls_id, conf in zip(classes, confidences):
+                name = self._model.names.get(cls_id, f"class_{cls_id}")
+                if name not in det_summary or conf > det_summary[name]:
+                    det_summary[name] = float(conf)
+            logger.debug("yolo_detections", detections=det_summary)
+
         # Phone detection
         phone_mask = classes == PHONE_CLASS_ID
         if phone_mask.any():

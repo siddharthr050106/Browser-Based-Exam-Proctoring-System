@@ -8,16 +8,17 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:8000',
+      // Sidecar: audio WebSocket — MUST come before generic /ws
+      '/ws/audio': {
+        target: 'ws://127.0.0.1:8765',
+        ws: true,
+      },
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true,
       },
       // Sidecar: local detection pipeline on localhost:8765
       '/detect': 'http://127.0.0.1:8765',
-      '/ws/audio': {
-        target: 'ws://127.0.0.1:8765',
-        ws: true,
-      },
     },
   },
 })

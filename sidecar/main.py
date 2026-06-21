@@ -224,6 +224,14 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                     _pipelines[session_id] = DetectionPipeline(_get_pipeline_config())
 
                 signals, ar = _pipelines[session_id].process_audio(samples)
+                
+                logger.debug(
+                    "audio_processed", 
+                    chunk_size=len(samples), 
+                    predicted_class=ar.predicted_class, 
+                    confidence=ar.confidence,
+                    is_speech=ar.is_speech
+                )
 
                 # Convert signals to response format
                 flag = None
