@@ -25,6 +25,7 @@ env/
 
 # Node / Frontend
 frontend/node_modules/
+electron/node_modules/
 frontend/dist/
 frontend/.vite/
 
@@ -43,6 +44,7 @@ Thumbs.db
 # Temp files
 BEZP_extracted.txt
 extract_docx.ps1
+test_*.py
 
 # Alembic
 alembic/versions/__pycache__/

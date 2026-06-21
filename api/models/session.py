@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Enum, String, DateTime, ForeignKey
+from sqlalchemy import Enum, String, DateTime, Float, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +53,16 @@ class ExamSession(Base):
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     warning_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     termination_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # ── Gear / Heartbeat / Trust (4-Gear Telemetry) ──
+    current_gear: Mapped[int] = mapped_column(Integer, default=1)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    gear_4_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    trust_score: Mapped[float] = mapped_column(Float, default=1.0)
 
     # Relationships
     student = relationship("User", back_populates="sessions", lazy="selectin")

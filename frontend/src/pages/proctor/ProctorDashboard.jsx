@@ -3,13 +3,20 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { sessionApi, eventApi } from '../../lib/api'
 import { useProctorStore } from '../../stores/proctorStore'
-import { Eye, AlertTriangle, Wifi, Users, Activity } from 'lucide-react'
+import { Eye, AlertTriangle, Wifi, WifiOff, Users, Activity, Shield } from 'lucide-react'
 
 const tierColors = {
   tier_1: 'text-emerald-400',
   tier_2: 'text-primary-400',
   tier_3: 'text-amber-400',
   tier_4: 'text-danger',
+}
+
+const gearConfig = {
+  1: { label: 'Gear 1', color: '#10b981', icon: Wifi },
+  2: { label: 'Gear 2', color: '#6366f1', icon: Wifi },
+  3: { label: 'Gear 3', color: '#f59e0b', icon: Wifi },
+  4: { label: 'Gear 4', color: '#ef4444', icon: WifiOff },
 }
 
 export default function ProctorDashboard() {
@@ -144,7 +151,7 @@ export default function ProctorDashboard() {
                   </div>
                 </div>
 
-                {/* Network Tier */}
+                {/* Network & Trust */}
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1 text-surface-500">
                     <Wifi className={`w-3.5 h-3.5 ${tierColors[session.network_tier] || 'text-surface-500'}`} />
@@ -155,6 +162,45 @@ export default function ProctorDashboard() {
                       {latestEvent.event_type?.replace('_', ' ')}
                     </span>
                   )}
+                </div>
+
+                {/* Gear Badge + Trust Score */}
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-surface-800">
+                  {(() => {
+                    const gear = session.current_gear || 1
+                    const gc = gearConfig[gear]
+                    const GearIcon = gc?.icon || Wifi
+                    return (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full font-medium border flex items-center gap-1"
+                        style={{
+                          backgroundColor: `${gc?.color || '#64748b'}20`,
+                          color: gc?.color || '#64748b',
+                          borderColor: `${gc?.color || '#64748b'}40`,
+                        }}
+                      >
+                        <GearIcon className="w-2.5 h-2.5" />
+                        {gc?.label || 'Gear ?'}
+                      </span>
+                    )
+                  })()}
+
+                  {/* Trust Score mini-bar */}
+                  <div className="flex items-center gap-1.5">
+                    <Shield className="w-3 h-3 text-surface-500" />
+                    <div className="w-12 h-1.5 bg-surface-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${(session.trust_score || 1) * 100}%`,
+                          backgroundColor: (session.trust_score || 1) > 0.7 ? '#10b981' : (session.trust_score || 1) > 0.4 ? '#f59e0b' : '#ef4444',
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-surface-500">
+                      {((session.trust_score || 1) * 100).toFixed(0)}%
+                    </span>
+                  </div>
                 </div>
               </Link>
             )

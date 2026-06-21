@@ -64,5 +64,22 @@ class Settings(BaseSettings):
     NETWORK_PROBE_SIZE_KB: int = 100
     NETWORK_PROBE_INTERVAL_SECONDS: int = 30
 
+    # ── 4-Gear System ──
+    GEAR_1_MIN_BANDWIDTH_MBPS: float = 10.0
+    GEAR_1_MAX_RTT_MS: int = 50
+    GEAR_2_MIN_BANDWIDTH_MBPS: float = 2.0
+    GEAR_2_MAX_RTT_MS: int = 150
+    GEAR_3_MIN_BANDWIDTH_MBPS: float = 0.5
+    GEAR_3_MAX_RTT_MS: int = 500
+    GEAR_4_SUSPENSION_TIMEOUT_MINUTES: int = 5
+    GEAR_1_HEARTBEAT_MS: int = 5000
+    GEAR_2_HEARTBEAT_MS: int = 15000
+    GEAR_3_HEARTBEAT_MS: int = 30000
+    HEARTBEAT_STALE_MULTIPLIER: float = 2.5  # Mark stale if no heartbeat for 2.5× interval
+
+    # ── Sidecar ──
+    SIDECAR_HOST: str = "127.0.0.1"
+    SIDECAR_PORT: int = 8765
+
 
 settings = Settings()

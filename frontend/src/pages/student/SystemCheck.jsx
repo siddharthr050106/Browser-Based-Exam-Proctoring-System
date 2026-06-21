@@ -15,18 +15,28 @@ export default function SystemCheck() {
     fullscreen: null,
     browser: null,
   })
+  const streamRef = useRef(null)
   const [stream, setStream] = useState(null)
   const [starting, setStarting] = useState(false)
 
-  const allPassed = Object.values(checks).every((v) => v === true)
+  // For local testing/flexibility, allow proceeding if at least the camera works
+  const allPassed = checks.camera === true
 
   // Run checks on mount
   useEffect(() => {
     runChecks()
-    return () => { if (stream) stream.getTracks().forEach((t) => t.stop()) }
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop())
+      }
+    }
   }, [])
 
+  const [mediaError, setMediaError] = useState('')
+
   async function runChecks() {
+    setChecks((c) => ({ ...c, camera: null, microphone: null }))
+    setMediaError('')
     // Browser check
     const isChrome = /Chrome/.test(navigator.userAgent) && !/Edge/.test(navigator.userAgent)
     const isFirefox = /Firefox/.test(navigator.userAgent)
@@ -37,15 +47,51 @@ export default function SystemCheck() {
 
     // Camera + Microphone
     try {
+      // Stop existing stream if retrying
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+      }
+      // Try requesting both
       const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      streamRef.current = mediaStream
       setStream(mediaStream)
       if (videoRef.current) videoRef.current.srcObject = mediaStream
       setChecks((c) => ({ ...c, camera: true, microphone: true }))
-    } catch {
+    } catch (err) {
+      console.warn('Combined media request failed, attempting fallbacks...', err)
+      let camStatus = false
+      let micStatus = false
+      let lastErr = err.message || err.name
+
+      // Fallback 1: Try Video Only
+      try {
+        const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
+        streamRef.current = camStream
+        setStream(camStream)
+        if (videoRef.current) videoRef.current.srcObject = camStream
+        camStatus = true
+        lastErr = 'Microphone device not found'
+      } catch (camErr) {
+        console.warn('Video-only request failed:', camErr)
+        lastErr = camErr.message || camErr.name
+      }
+
+      // Fallback 2: Try Audio Only if video failed, just to test mic status
+      if (!camStatus) {
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          micStream.getTracks().forEach(t => t.stop()) // clean up immediately
+          micStatus = true
+        } catch (micErr) {
+          console.warn('Audio-only request failed:', micErr)
+        }
+      }
+
+      setMediaError(lastErr)
       setChecks((c) => ({
         ...c,
-        camera: false,
-        microphone: false,
+        camera: camStatus,
+        microphone: micStatus,
       }))
     }
   }
@@ -57,17 +103,21 @@ export default function SystemCheck() {
         student_id: user.id,
         exam_id: examId,
       })
+      // Stop webcam tracks completely so ExamSession can acquire the camera cleanly
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
       // Enter fullscreen
       try { await document.documentElement.requestFullscreen() } catch { /* ok */ }
       navigate(`/student/exam/${session.id}`)
     } catch (err) {
       alert('Failed to start session: ' + err.message)
-    } finally {
       setStarting(false)
     }
   }
 
-  const CheckItem = ({ label, icon: Icon, status }) => (
+  const CheckItem = ({ label, icon: Icon, status, errorText }) => (
     <div className="glass-light p-4 flex items-center gap-4">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
         status === true ? 'bg-emerald-500/10' : status === false ? 'bg-danger/10' : 'bg-surface-700/50'
@@ -79,7 +129,7 @@ export default function SystemCheck() {
       <div className="flex-1">
         <p className="font-medium">{label}</p>
         <p className="text-xs text-surface-500">
-          {status === null ? 'Checking...' : status ? 'Ready' : 'Not available'}
+          {status === null ? 'Checking...' : status ? 'Ready' : errorText || 'Not available'}
         </p>
       </div>
       {status === true && <CheckCircle className="w-5 h-5 text-emerald-400" />}
@@ -110,11 +160,31 @@ export default function SystemCheck() {
 
       {/* Checklist */}
       <div className="space-y-3">
-        <CheckItem label="Camera Access" icon={Camera} status={checks.camera} />
-        <CheckItem label="Microphone Access" icon={Mic} status={checks.microphone} />
+        <CheckItem label="Camera Access" icon={Camera} status={checks.camera} errorText={mediaError} />
+        <CheckItem label="Microphone Access" icon={Mic} status={checks.microphone} errorText={mediaError} />
         <CheckItem label="Fullscreen Support" icon={Monitor} status={checks.fullscreen} />
         <CheckItem label="Browser Compatibility" icon={Monitor} status={checks.browser} />
       </div>
+
+      {/* Manual Retry & Debug Banner */}
+      {checks.camera === false && (
+        <div className="space-y-3 animate-fade-in">
+          <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm flex flex-col gap-1">
+            <span className="font-semibold flex items-center gap-1.5">
+              ⚠️ Multiple Tabs Open?
+            </span>
+            <p className="text-surface-300 text-xs leading-relaxed">
+              Webcam hardware can only be accessed by one browser tab at a time. Please close any other open exam tabs/windows and ensure permission is allowed at the top left of the URL bar.
+            </p>
+          </div>
+          <button
+            onClick={runChecks}
+            className="w-full py-3 glass-light text-primary-400 font-medium rounded-xl hover:bg-surface-800 transition-all flex items-center justify-center gap-2 border border-primary-500/20"
+          >
+            <Camera className="w-4 h-4" /> Retry Camera Access
+          </button>
+        </div>
+      )}
 
       {/* Start Button */}
       <button

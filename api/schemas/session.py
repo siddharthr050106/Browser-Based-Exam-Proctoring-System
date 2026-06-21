@@ -20,6 +20,8 @@ class SessionUpdate(BaseModel):
     status: Optional[SessionStatus] = None
     network_tier: Optional[NetworkTier] = None
     end_time: Optional[datetime] = None
+    current_gear: Optional[int] = None
+    trust_score: Optional[float] = None
 
 
 class SessionResponse(BaseModel):
@@ -32,6 +34,9 @@ class SessionResponse(BaseModel):
     end_time: Optional[datetime] = None
     warning_issued_at: Optional[datetime] = None
     termination_reason: Optional[str] = None
+    current_gear: Optional[int] = 1
+    last_heartbeat_at: Optional[datetime] = None
+    trust_score: Optional[float] = 1.0
 
     model_config = {"from_attributes": True}
 

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { eventApi, sessionApi, clipApi } from '../../lib/api'
 import { useProctorStore } from '../../stores/proctorStore'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { ArrowLeft, Pause, Play, Download, Video, AlertTriangle, Clock, ShieldAlert, ShieldOff, Check, MessageSquare, Eye, XCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, Pause, Play, Download, Video, AlertTriangle, Clock, ShieldAlert, ShieldOff, Check, MessageSquare, Eye, XCircle, Loader2, Wifi, WifiOff, Shield } from 'lucide-react'
 import { format } from 'date-fns'
 
 const tierBadgeClass = {
@@ -227,7 +227,7 @@ export default function SessionMonitor() {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="glass-light p-4 text-center">
           <p className="text-2xl font-bold">{uniqueEvents.length}</p>
           <p className="text-xs text-surface-500">Total Events</p>
@@ -241,10 +241,52 @@ export default function SessionMonitor() {
           <p className="text-xs text-surface-500">Warnings</p>
         </div>
         <div className="glass-light p-4 text-center">
-          <p className="text-2xl font-bold text-surface-300">{session?.status || '—'}</p>
-          <p className="text-xs text-surface-500">Status</p>
+          {/* Gear Indicator */}
+          {(() => {
+            const gear = session?.current_gear || 1
+            const gearColors = { 1: '#10b981', 2: '#6366f1', 3: '#f59e0b', 4: '#ef4444' }
+            const GearIcon = gear === 4 ? WifiOff : Wifi
+            return (
+              <>
+                <div className="flex items-center justify-center gap-1.5 mb-1">
+                  <GearIcon className="w-5 h-5" style={{ color: gearColors[gear] }} />
+                  <p className="text-2xl font-bold" style={{ color: gearColors[gear] }}>{gear}</p>
+                </div>
+                <p className="text-xs text-surface-500">Gear</p>
+              </>
+            )
+          })()}
+        </div>
+        <div className="glass-light p-4 text-center">
+          {/* Trust Score */}
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <Shield className="w-5 h-5 text-surface-400" />
+            <p className={`text-2xl font-bold ${
+              (session?.trust_score || 1) > 0.7 ? 'text-emerald-400' :
+              (session?.trust_score || 1) > 0.4 ? 'text-amber-400' : 'text-red-400'
+            }`}>
+              {((session?.trust_score || 1) * 100).toFixed(0)}%
+            </p>
+          </div>
+          <p className="text-xs text-surface-500">Trust</p>
         </div>
       </div>
+
+      {/* Gear 4 Offline Alert */}
+      {(session?.current_gear === 4) && (
+        <div className="glass p-4 border border-red-500/30 flex items-center gap-3">
+          <WifiOff className="w-5 h-5 text-red-400 animate-pulse" />
+          <div>
+            <p className="text-sm text-red-400 font-medium">Student is offline (Gear 4)</p>
+            <p className="text-xs text-surface-500">
+              No frames or events are being received. Events are being buffered on the student's device.
+              {session?.last_heartbeat_at && (
+                <> Last heartbeat: {format(new Date(session.last_heartbeat_at), 'HH:mm:ss')}</>  
+              )}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── INTERVENTION PANEL ── */}
       {session?.status !== 'completed' && session?.status !== 'terminated' && (

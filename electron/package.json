@@ -1,0 +1,50 @@
+{
+  "name": "bezp-desktop",
+  "version": "1.0.0",
+  "description": "BEZP — Browser-Based Exam Proctoring System (Desktop Client)",
+  "main": "main.js",
+  "scripts": {
+    "start": "set NODE_ENV=development&& electron .",
+    "start:prod": "set NODE_ENV=production&& electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.bezp.desktop",
+    "productName": "BEZP Exam Proctoring",
+    "directories": {
+      "output": "../dist-electron"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      },
+      {
+        "from": "../sidecar/dist",
+        "to": "sidecar",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}

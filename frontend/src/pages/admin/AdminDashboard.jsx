@@ -98,11 +98,13 @@ export default function AdminDashboard() {
         <h2 className="text-sm font-semibold text-surface-400 uppercase tracking-wider mb-4">
           System Health
         </h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-5 gap-4">
           {[
             { label: 'API Server', status: 'healthy' },
             { label: 'PostgreSQL', status: 'healthy' },
             { label: 'Redis', status: 'healthy' },
+            { label: 'Detection Sidecar', status: 'healthy' },
+            { label: 'Audio Service', status: 'healthy' },
           ].map(({ label, status }) => (
             <div key={label} className="glass-light p-4 flex items-center gap-3">
               <div className={`status-dot ${status === 'healthy' ? 'green' : 'red'}`} />

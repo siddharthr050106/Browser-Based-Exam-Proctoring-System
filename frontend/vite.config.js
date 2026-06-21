@@ -12,7 +12,12 @@ export default defineConfig({
         target: 'ws://localhost:8000',
         ws: true,
       },
-      '/detect': 'http://localhost:8001',
+      // Sidecar: local detection pipeline on localhost:8765
+      '/detect': 'http://127.0.0.1:8765',
+      '/ws/audio': {
+        target: 'ws://127.0.0.1:8765',
+        ws: true,
+      },
     },
   },
 })
