@@ -20,7 +20,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-import torchaudio
 
 # Add project root to path so we can import detection
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,26 +35,42 @@ class SyntheticAudioDataset(Dataset):
         self.chunk_samples = self.sample_rate * 3  # 3 seconds
         
         print("Loading LibriSpeech dataset (this may take a while if downloading)...")
-        # Use dev-clean (~300MB) instead of train-clean-100 (~6GB) for faster iteration
-        self.librispeech = torchaudio.datasets.LIBRISPEECH(
-            root=librispeech_path, url="dev-clean", download=True
-        )
-        print(f"Loaded {len(self.librispeech)} speech samples.")
+        try:
+            import torchaudio
+            self.librispeech = torchaudio.datasets.LIBRISPEECH(
+                root=librispeech_path, url="dev-clean", download=True
+            )
+            # Try to load one sample to verify the audio codec works on Windows
+            _ = self.librispeech[0]
+            print(f"Loaded {len(self.librispeech)} speech samples.")
+        except Exception as e:
+            print(f"Warning: Failed to load LibriSpeech ({e}). Using fully synthetic 'speech' data.")
+            self.librispeech = None
 
     def __len__(self):
         return self.length
 
     def _get_random_speech_chunk(self):
-        """Extract a random 3-second chunk from LibriSpeech."""
-        idx = random.randint(0, len(self.librispeech) - 1)
-        waveform, sample_rate, _, _, _, _ = self.librispeech[idx]
-        
-        # Resample if needed
-        if sample_rate != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=self.sample_rate)
-            waveform = resampler(waveform)
+        """Extract a random 3-second chunk from LibriSpeech or generate synthetic speech."""
+        if self.librispeech is not None:
+            import torchaudio
+            idx = random.randint(0, len(self.librispeech) - 1)
+            waveform, sample_rate, _, _, _, _ = self.librispeech[idx]
             
-        waveform = waveform.squeeze().numpy()
+            # Resample if needed
+            if sample_rate != self.sample_rate:
+                resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=self.sample_rate)
+                waveform = resampler(waveform)
+                
+            waveform = waveform.squeeze().numpy()
+        else:
+            # Generate synthetic "speech-like" signals (modulated formants with pauses)
+            t = np.linspace(0, 3, self.chunk_samples, endpoint=False)
+            f1 = 500 + 100 * np.sin(2 * np.pi * 2 * t)
+            f2 = 1500 + 200 * np.sin(2 * np.pi * 3 * t)
+            waveform = 0.5 * np.sin(2 * np.pi * f1 * t) + 0.3 * np.sin(2 * np.pi * f2 * t)
+            envelope = np.clip(np.sin(2 * np.pi * random.uniform(1, 4) * t), 0, 1)
+            waveform = (waveform * envelope).astype(np.float32)
         
         if len(waveform) > self.chunk_samples:
             start = random.randint(0, len(waveform) - self.chunk_samples)

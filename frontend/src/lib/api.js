@@ -110,3 +110,8 @@ export const clipApi = {
   getWarning: (sessionId) => request(`/clips/warning/${sessionId}`),
   get: (eventId) => request(`/clips/${eventId}`),
 }
+
+// ── Federated Learning ──
+export const flApi = {
+  contribute: (data) => request('/fl/contribute', { method: 'POST', body: JSON.stringify(data) }),
+}

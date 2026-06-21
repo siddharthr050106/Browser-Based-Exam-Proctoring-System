@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { sessionApi, eventApi, clipApi } from '../../lib/api'
+import { sessionApi, eventApi, clipApi, flApi } from '../../lib/api'
 import { initGearManager, stopGearManager, getCurrentGear, getGearConfig, onGearChange, getFrameCaptureIntervalMs, GEARS } from '../../lib/gearManager'
 import { initHeartbeat, stopHeartbeat, reportEvent, reportGaze, getTrustScore } from '../../lib/heartbeatService'
 import { initOfflineBuffer, stopOfflineBuffer, enterGear4, exitGear4, isSuspended } from '../../lib/offlineBuffer'
@@ -615,8 +615,25 @@ export default function ExamSession() {
     }
 
     try {
-      // Clean up sidecar session
-      await fetch(`${getSidecarUrl()}/detect/end-session/${sessionId}`, { method: 'POST' }).catch(() => {})
+      // Clean up sidecar session and collect FL parameters
+      const sidecarRes = await fetch(`${getSidecarUrl()}/detect/end-session/${sessionId}`, { method: 'POST' }).catch(() => null)
+      if (sidecarRes && sidecarRes.ok) {
+        try {
+          const sidecarData = await sidecarRes.json()
+          if ((sidecarData.fl_boundary_params && sidecarData.fl_boundary_params.length > 0) || 
+              (sidecarData.fl_audio_params && sidecarData.fl_audio_params.length > 0)) {
+            await flApi.contribute({
+              session_id: sessionId,
+              fl_boundary_params: sidecarData.fl_boundary_params || [],
+              fl_audio_params: sidecarData.fl_audio_params || []
+            })
+            console.log('[ExamSession] Federated Learning contribution submitted')
+          }
+        } catch (err) {
+          console.error('[ExamSession] Failed to submit FL contribution', err)
+        }
+      }
+
       await sessionApi.end(sessionId)
       if (stream) stream.getTracks().forEach(t => t.stop())
       stopVideoBuffer()
